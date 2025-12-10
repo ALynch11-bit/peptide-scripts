@@ -1,0 +1,42 @@
+import pandas as pd
+import re
+
+# Load Excel sheet
+df = pd.read_excel("Batch7results.xlsx", sheet_name="RepeatingAA")
+
+# CHANGE THIS to whatever your actual column name is:
+seq_col = "sequence"     # <--- update if needed
+
+# Function for consecutive repeats
+def find_consecutive_repeats(seq):
+    if pd.isna(seq):
+        return "No", ""
+    
+    seq = str(seq).strip()
+    
+    # find blocks like AA, CCC, GG, etc.
+    blocks = re.findall(r"(.)\1+", seq)
+    
+    # unique in order
+    seen = []
+    for b in blocks:
+        if b not in seen:
+            seen.append(b)
+    
+    if seen:
+        return "Yes", ",".join(seen)
+    else:
+        return "No", ""
+
+# Apply function
+results = df[seq_col].apply(find_consecutive_repeats)
+
+df["HasConsecutiveRepeats"] = results.apply(lambda x: x[0])
+df["ConsecutiveRepeats"] = results.apply(lambda x: x[1])
+
+# Make JupyterLab print all 14,832 rows without truncation
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+
+# Display the full table
+df
