@@ -1,0 +1,47 @@
+import pandas as pd
+import numpy as np
+
+# Load your Excel file
+df = pd.read_excel('Batch7results.xlsx', sheet_name='fragments')
+
+# Fragment ions we want to extract
+target_frags = [
+    'b1','b2','b3','b4','b5','b6','b7','b8',
+    'y1','y2','y3','y4','y5','y6','y7','y8'
+]
+
+# Prepare empty output table
+output = pd.DataFrame({'Excel_Row': range(2, 14833)})
+for ion in target_frags:
+    output[ion] = np.nan
+
+# Process rows R2–R14832 and S2–S14832
+for excel_row in range(2, 14833):
+    idx = excel_row - 2  # DataFrame index
+
+    matches_raw = df.loc[idx, 'Matches']
+    intens_raw = df.loc[idx, 'Intensities']
+
+    if pd.isna(matches_raw) or pd.isna(intens_raw):
+        continue
+
+    matches = [m.strip() for m in str(matches_raw).split(';')]
+    intens = [float(x) for x in str(intens_raw).split(';')]
+
+    # Loop through fragments & intensities together
+    for m, I in zip(matches, intens):
+        # skip modified fragments (anything containing '-')
+        if '-' in m:
+            continue
+        # only exact base ions
+        if m in target_frags:
+            output.loc[output['Excel_Row'] == excel_row, m] = I
+
+# --- NEW: show EVERYTHING, no truncation ---
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+pd.set_option('display.max_colwidth', None)
+pd.set_option('display.expand_frame_repr', True)
+
+# Show all results
+output
