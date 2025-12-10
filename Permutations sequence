@@ -1,0 +1,37 @@
+import pandas as pd
+
+# Load Excel file and Sheet1
+df = pd.read_excel("Batch7results.xlsx", sheet_name="Sheet1")
+
+# Ensure the 'Sequence' column exists
+if "Sequence" not in df.columns:
+    raise ValueError("Column 'Sequence' not found in Sheet1.")
+
+# Function to convert a peptide into a sorted key representing its composition
+def peptide_key(seq):
+    return ''.join(sorted(seq)) if isinstance(seq, str) else None
+
+# Create a new column that represents the sorted sequence
+df["PermKey"] = df["Sequence"].apply(peptide_key)
+
+# Count how many sequences share the same permutation key
+counts = df["PermKey"].value_counts()
+
+# Create dictionary mapping each PermKey to permutation group number
+perm_key_to_group = {}
+group_number = 1
+
+for key, count in counts.items():
+    if count > 1:  # only assign groups if permutations exist
+        perm_key_to_group[key] = group_number
+        group_number += 1
+    else:
+        perm_key_to_group[key] = 0  # no permutations → group 0
+
+# Assign permutation group numbers to each sequence
+df["PermutationGroup"] = df["PermKey"].map(perm_key_to_group)
+
+# OPTIONAL: save results back to Excel
+df.to_excel("Batch7results_with_permutations.xlsx", index=False)
+
+df.head()
