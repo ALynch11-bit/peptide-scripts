@@ -1,0 +1,60 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# ---------------------------------------
+# Load the Excel file + specific worksheet
+# ---------------------------------------
+df = pd.read_excel("Batch7results.xlsx", sheet_name="allrunspeptide")
+
+# ---------------------------------------
+# Settings
+# ---------------------------------------
+intensity_col = "BH"   # column containing log-intensity (4–9)
+
+# amino acids EXCLUDING cysteine
+amino_acids = [
+    "A","D","E","F","G","H","I","K","L","M","N",
+    "P","Q","R","S","T","V","W","Y"
+]
+
+# If your amino acid count columns are named like "A_count", "D_count", etc:
+count_cols = {aa: f"{aa}_count" for aa in amino_acids}
+
+# ---------------------------------------
+# Build output table for heatmap
+# ---------------------------------------
+heatmap_data = pd.DataFrame(index=amino_acids)
+
+# Find the maximum count of any amino acid across peptides
+max_count = 0
+for aa in amino_acids:
+    col = count_cols[aa]
+    if col in df.columns:
+        max_count = max(max_count, df[col].max())
+
+# For each count (0,1,2,...) compute the mean intensity
+for c in range(int(max_count) + 1):
+    col_name = f"count_{c}"
+    heatmap_data[col_name] = [
+        df.loc[df[count_cols[aa]] == c, intensity_col].mean()
+        for aa in amino_acids
+    ]
+
+# ---------------------------------------
+# Plot heatmap
+# ---------------------------------------
+plt.figure(figsize=(10, 8))
+sns.heatmap(
+    heatmap_data,
+    cmap="magma",
+    annot=True,
+    fmt=".2f",
+    linewidths=.5
+)
+plt.title("Average log-intensity by Amino Acid Count")
+plt.xlabel("Count of Amino Acid in Peptide")
+plt.ylabel("Amino Acid")
+plt.tight_layout()
+plt.show()
