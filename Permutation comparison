@@ -1,0 +1,59 @@
+import pandas as pd
+import numpy as np
+from itertools import combinations
+
+# ----------------------------------------
+# FORCE PANDAS TO SHOW EVERYTHING
+# ----------------------------------------
+pd.set_option("display.max_rows", None)
+pd.set_option("display.max_columns", None)
+pd.set_option("display.width", None)
+pd.set_option("display.max_colwidth", None)
+
+# ----------------------------------------
+# Load Excel file
+# ----------------------------------------
+df = pd.read_excel("Batch7results.xlsx", sheet_name="Permutation")
+
+# ----------------------------------------
+# Required columns
+# ----------------------------------------
+group_col = "Permutationgroup"
+cols_to_compare = ["Log of Intensity", "Log of PEP", "Log of Matches"]
+
+# Remove 0 or blank groups
+df = df[df[group_col] != 0].copy()
+
+# ----------------------------------------
+# Percent difference function
+# ----------------------------------------
+def percent_diff(a, b):
+    if (a + b) == 0:
+        return np.nan
+    return abs(a - b) / ((a + b) / 2) * 100
+
+# ----------------------------------------
+# Build pairwise comparison table
+# ----------------------------------------
+output_rows = []
+
+for group, subdf in df.groupby(group_col):
+    for (idx1, row1), (idx2, row2) in combinations(subdf.iterrows(), 2):
+
+        result = {
+            "Group": group,
+            "Peptide A": row1["Sequence"],
+            "Peptide B": row2["Sequence"],
+        }
+
+        for col in cols_to_compare:
+            result[f"%Diff_{col}"] = percent_diff(row1[col], row2[col])
+
+        output_rows.append(result)
+
+output_df = pd.DataFrame(output_rows)
+
+# ----------------------------------------
+# SHOW EVERYTHING (even 100,000+ rows)
+# ----------------------------------------
+output_df
