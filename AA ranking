@@ -1,0 +1,74 @@
+import pandas as pd
+import numpy as np
+
+# ----------------------------------------
+# SHOW ALL RESULTS
+# ----------------------------------------
+pd.set_option("display.max_rows", None)
+pd.set_option("display.max_columns", None)
+pd.set_option("display.width", None)
+pd.set_option("display.max_colwidth", None)
+
+# ----------------------------------------
+# LOAD DATA
+# ----------------------------------------
+df = pd.read_excel("Batch7results.xlsx", sheet_name="AAvariations")
+
+# ----------------------------------------
+# REQUIRED COLUMNS
+# ----------------------------------------
+aa_change_col = "AA change"   # e.g. "I->T @ pos 4"
+cols = [
+    "%Diff_Log of Intensity",
+    "%Diff_Log of PEP",
+    "%Diff_Log of Matches"
+]
+
+# ----------------------------------------
+# CLEAN AA CHANGE COLUMN
+# (remove position info)
+# ----------------------------------------
+df["AA_change_clean"] = (
+    df[aa_change_col]
+    .astype(str)
+    .str.split("@")
+    .str[0]
+    .str.strip()
+)
+
+# ----------------------------------------
+# GROUP & AVERAGE (SIGNS PRESERVED)
+# ----------------------------------------
+summary = (
+    df
+    .groupby("AA_change_clean")[cols]
+    .mean()
+    .reset_index()
+)
+
+# ----------------------------------------
+# COUNT HOW MANY OBSERVATIONS PER CHANGE
+# ----------------------------------------
+counts = (
+    df.groupby("AA_change_clean")
+      .size()
+      .reset_index(name="Count")
+)
+
+summary = summary.merge(counts, on="AA_change_clean")
+
+# ----------------------------------------
+# OVERALL SCORE
+# (simple mean — no sign flipping)
+# ----------------------------------------
+summary["Overall_Score"] = summary[cols].mean(axis=1)
+
+# ----------------------------------------
+# SORT BY STRONGEST EFFECT
+# ----------------------------------------
+summary = summary.sort_values("Overall_Score", ascending=False)
+
+# ----------------------------------------
+# FINAL OUTPUT
+# ----------------------------------------
+summary
