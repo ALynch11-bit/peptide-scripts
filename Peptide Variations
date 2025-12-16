@@ -1,0 +1,88 @@
+import pandas as pd
+import numpy as np
+from collections import defaultdict
+from itertools import combinations
+import csv
+
+# ----------------------------------------
+# Load Excel file
+# ----------------------------------------
+df = pd.read_excel("Batch7results.xlsx", sheet_name="AAvariations")
+
+sequence_col = "Sequence"
+value_cols = {
+    "Intensity": "Log of Intensity",
+    "PEP": "Log of PEP",
+    "Matches": "Log of Matches"
+}
+
+df = df.dropna(subset=[sequence_col]).copy()
+df[sequence_col] = df[sequence_col].astype(str)
+
+# ----------------------------------------
+# Signed percent difference
+# ----------------------------------------
+def signed_percent_diff(a, b):
+    if pd.isna(a) or pd.isna(b) or (a + b) == 0:
+        return np.nan
+    return (b - a) / ((a + b) / 2) * 100
+
+# ----------------------------------------
+# Group peptides by length
+# ----------------------------------------
+length_groups = defaultdict(list)
+for idx, seq in df[sequence_col].items():
+    length_groups[len(seq)].append((idx, seq))
+
+# ----------------------------------------
+# Output CSV (streaming)
+# ----------------------------------------
+output_file = "AA_single_mutation_results.csv"
+
+with open(output_file, "w", newline="", encoding="utf-8") as f:
+    writer = csv.writer(f)
+
+    # Write header
+    writer.writerow([
+        "Peptide A",
+        "Peptide B",
+        "AA Change",
+        "%Δ Intensity",
+        "%Δ PEP",
+        "%Δ Matches"
+    ])
+
+    # ----------------------------------------
+    # Process peptides safely
+    # ----------------------------------------
+    for length, peptides in length_groups.items():
+
+        signature_map = defaultdict(list)
+
+        for idx, seq in peptides:
+            for pos in range(length):
+                sig = seq[:pos] + "_" + seq[pos+1:]
+                signature_map[(pos, sig)].append((idx, seq))
+
+        for (pos, _), matches in signature_map.items():
+            if len(matches) < 2:
+                continue
+
+            for (i1, seq1), (i2, seq2) in combinations(matches, 2):
+
+                aa1 = seq1[pos]
+                aa2 = seq2[pos]
+
+                writer.writerow([
+                    seq1,
+                    seq2,
+                    f"{aa1}→{aa2} @ pos {pos+1}",
+                    signed_percent_diff(df.at[i1, value_cols["Intensity"]],
+                                        df.at[i2, value_cols["Intensity"]]),
+                    signed_percent_diff(df.at[i1, value_cols["PEP"]],
+                                        df.at[i2, value_cols["PEP"]]),
+                    signed_percent_diff(df.at[i1, value_cols["Matches"]],
+                                        df.at[i2, value_cols["Matches"]])
+                ])
+
+print("Finished safely. Results written to AA_single_mutation_results.csv")
