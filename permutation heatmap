@@ -1,0 +1,111 @@
+import pandas as pd
+
+# ============================================================
+# SETTINGS
+# ============================================================
+
+FILE = "Batch7results.xlsx"
+SHEET = "Permutationdifferences"
+
+OUTPUT = "Batch7_AA_STRICT_SINGLE_SWAP_BIDIRECTIONAL.xlsx"
+
+VALUE_COLS = [
+    "Log of Intensity",
+    "Log of PEP",
+    "Log of Matches"
+]
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+def symmetric_signed_percent(a, b):
+    if pd.isna(a) or pd.isna(b) or (a + b) == 0:
+        return None
+    return (b - a) / ((a + b) / 2) * 100
+
+def detect_strict_swap(seq_a, seq_b):
+    """
+    EXACTLY one 1↔1 residue swap
+    """
+    if len(seq_a) != len(seq_b):
+        return None
+
+    diffs = [(i, a, b) for i, (a, b) in enumerate(zip(seq_a, seq_b)) if a != b]
+
+    if len(diffs) != 2:
+        return None
+
+    (i1, a1, b1), (i2, a2, b2) = diffs
+
+    if a1 == b2 and a2 == b1:
+        return a1, i1 + 1, a2, i2 + 1
+
+    return None
+
+# ============================================================
+# LOAD + COLLAPSE DUPLICATES
+# ============================================================
+
+df = pd.read_excel(FILE, sheet_name=SHEET)
+df["Sequence"] = df["Sequence"].astype(str)
+
+# Collapse replicates (CRITICAL FIX)
+agg_dict = {col: "mean" for col in VALUE_COLS}
+df_unique = df.groupby("Sequence", as_index=False).agg(agg_dict)
+
+# Build lookup
+seq_lookup = df_unique.set_index("Sequence").to_dict(orient="index")
+
+# ============================================================
+# STRICT SINGLE-SWAP ANALYSIS
+# ============================================================
+
+results = []
+sequences = list(seq_lookup.keys())
+
+for i, seq_a in enumerate(sequences):
+    for seq_b in sequences[i + 1:]:
+
+        swap = detect_strict_swap(seq_a, seq_b)
+        if swap is None:
+            continue
+
+        aa1, pos1, aa2, pos2 = swap
+
+        row_a = seq_lookup[seq_a]
+        row_b = seq_lookup[seq_b]
+
+        # Generate ALL directional + inverse outcomes
+        for from_seq, to_seq, from_row, to_row, aa, fpos, tpos in [
+            (seq_a, seq_b, row_a, row_b, aa1, pos1, pos2),
+            (seq_a, seq_b, row_a, row_b, aa2, pos2, pos1),
+            (seq_b, seq_a, row_b, row_a, aa1, pos2, pos1),
+            (seq_b, seq_a, row_b, row_a, aa2, pos1, pos2),
+        ]:
+            record = {
+                "Peptide_A": from_seq,
+                "Peptide_B": to_seq,
+                "Moved_AA": aa,
+                "From_Position": fpos,
+                "To_Position": tpos
+            }
+
+            for col in VALUE_COLS:
+                record[f"%Δ {col}"] = symmetric_signed_percent(
+                    from_row[col], to_row[col]
+                )
+
+            results.append(record)
+
+# ============================================================
+# SAVE ONLY (NO FLOODING)
+# ============================================================
+
+result_df = pd.DataFrame(results)
+result_df.to_excel(OUTPUT, index=False)
+
+print(
+    "Finished. Bidirectional strict single-swap table written to "
+    f"{OUTPUT}"
+)
