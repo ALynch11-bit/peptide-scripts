@@ -1,111 +1,137 @@
 import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 # ============================================================
-# SETTINGS
+# 1. SETTINGS
 # ============================================================
-
 FILE = "Batch7results.xlsx"
 SHEET = "Permutationdifferences"
 
-OUTPUT = "Batch7_AA_STRICT_SINGLE_SWAP_BIDIRECTIONAL.xlsx"
+TOP_POS = [4, 6, 7]
+BOT_POS = [7, 6, 4]
 
-VALUE_COLS = [
-    "Log of Intensity",
-    "Log of PEP",
-    "Log of Matches"
+AA_LIST = [
+    "A","D","E","F","G","H","K","L","M","N",
+    "P","Q","R","S","T","V","W","Y"
 ]
 
 # ============================================================
-# HELPERS
+# 2. LOAD DATA
 # ============================================================
-
-def symmetric_signed_percent(a, b):
-    if pd.isna(a) or pd.isna(b) or (a + b) == 0:
-        return None
-    return (b - a) / ((a + b) / 2) * 100
-
-def detect_strict_swap(seq_a, seq_b):
-    """
-    EXACTLY one 1↔1 residue swap
-    """
-    if len(seq_a) != len(seq_b):
-        return None
-
-    diffs = [(i, a, b) for i, (a, b) in enumerate(zip(seq_a, seq_b)) if a != b]
-
-    if len(diffs) != 2:
-        return None
-
-    (i1, a1, b1), (i2, a2, b2) = diffs
-
-    if a1 == b2 and a2 == b1:
-        return a1, i1 + 1, a2, i2 + 1
-
-    return None
-
-# ============================================================
-# LOAD + COLLAPSE DUPLICATES
-# ============================================================
-
 df = pd.read_excel(FILE, sheet_name=SHEET)
-df["Sequence"] = df["Sequence"].astype(str)
+df.columns = df.columns.str.strip()
 
-# Collapse replicates (CRITICAL FIX)
-agg_dict = {col: "mean" for col in VALUE_COLS}
-df_unique = df.groupby("Sequence", as_index=False).agg(agg_dict)
+df = df[df["From_Positionfinal"].isin(TOP_POS)]
 
-# Build lookup
-seq_lookup = df_unique.set_index("Sequence").to_dict(orient="index")
+df["AA_Movedfinal"] = df["AA_Movedfinal"].astype(str)
+df["Equal_final"] = df["Equal_final"].astype(float)
 
 # ============================================================
-# STRICT SINGLE-SWAP ANALYSIS
+# 3. AGGREGATE (MEAN EFFECT PER AA × POSITION)
 # ============================================================
-
-results = []
-sequences = list(seq_lookup.keys())
-
-for i, seq_a in enumerate(sequences):
-    for seq_b in sequences[i + 1:]:
-
-        swap = detect_strict_swap(seq_a, seq_b)
-        if swap is None:
-            continue
-
-        aa1, pos1, aa2, pos2 = swap
-
-        row_a = seq_lookup[seq_a]
-        row_b = seq_lookup[seq_b]
-
-        # Generate ALL directional + inverse outcomes
-        for from_seq, to_seq, from_row, to_row, aa, fpos, tpos in [
-            (seq_a, seq_b, row_a, row_b, aa1, pos1, pos2),
-            (seq_a, seq_b, row_a, row_b, aa2, pos2, pos1),
-            (seq_b, seq_a, row_b, row_a, aa1, pos2, pos1),
-            (seq_b, seq_a, row_b, row_a, aa2, pos1, pos2),
-        ]:
-            record = {
-                "Peptide_A": from_seq,
-                "Peptide_B": to_seq,
-                "Moved_AA": aa,
-                "From_Position": fpos,
-                "To_Position": tpos
-            }
-
-            for col in VALUE_COLS:
-                record[f"%Δ {col}"] = symmetric_signed_percent(
-                    from_row[col], to_row[col]
-                )
-
-            results.append(record)
-
-# ============================================================
-# SAVE ONLY (NO FLOODING)
-# ============================================================
-
-result_df = pd.DataFrame(results)
-result_df.to_excel(OUTPUT, index=False)
-
-print(
-    "Finished. Bidirectional strict single-swap table written to "
-    f"{OUTPUT}"
+agg = (
+    df
+    .groupby(["From_Positionfinal", "AA_Movedfinal"], as_index=False)
+    ["Equal_final"]
+    .mean()
 )
+
+# ============================================================
+# 4. FORCE FULL GRID (ALL AAs × ALL POSITIONS)
+# ============================================================
+full_index = pd.MultiIndex.from_product(
+    [TOP_POS, AA_LIST],
+    names=["From_Positionfinal", "AA_Movedfinal"]
+)
+
+agg = (
+    agg
+    .set_index(["From_Positionfinal", "AA_Movedfinal"])
+    .reindex(full_index)
+    .fillna(0)
+    .reset_index()
+)
+
+agg["Score"] = agg["Equal_final"].clip(-1, 1)
+
+# ============================================================
+# 5. BUILD HEATMAP MATRIX
+# ============================================================
+row_labels = (
+    [f"To {p}" for p in TOP_POS] +
+    [" "] +
+    [f"From {p}" for p in BOT_POS]
+)
+
+heatmap = pd.DataFrame(
+    np.nan,
+    index=row_labels,
+    columns=AA_LIST
+)
+
+# ============================================================
+# 6. FILL MATRIX (To + From)
+# ============================================================
+for _, r in agg.iterrows():
+    aa = r["AA_Movedfinal"]
+    pos = r["From_Positionfinal"]
+    val = r["Score"]
+
+    heatmap.loc[f"From {pos}", aa] = val
+    heatmap.loc[f"To {pos}", aa] = -val
+
+# ============================================================
+# 7. CLUSTERING (ON CLEAN DATA ONLY)
+# ============================================================
+cluster_data = heatmap.fillna(0)
+
+sns.set(style="white", font_scale=1.0)
+
+g = sns.clustermap(
+    cluster_data,
+    cmap="RdBu_r",
+    center=0,
+    vmin=-1,
+    vmax=1,
+    row_cluster=False,
+    col_cluster=True,
+    linewidths=0.6,
+    linecolor="black",
+    figsize=(18, 8),
+    cbar_kws={"label": "Equal Score (−1 → +1)"}
+)
+
+# ============================================================
+# 8. REALIGN HEATMAP VALUES WITH CLUSTERED AAs
+# ============================================================
+col_order = g.dendrogram_col.reordered_ind
+reordered_cols = heatmap.columns[col_order]
+
+heatmap_reordered = heatmap[reordered_cols]
+
+g.ax_heatmap.collections[0].set_array(
+    heatmap_reordered.values.flatten()
+)
+
+g.ax_heatmap.set_xticklabels(
+    reordered_cols,
+    rotation=0
+)
+
+# ============================================================
+# 9. LABELS & TITLE
+# ============================================================
+g.ax_heatmap.set_xlabel("Amino Acid")
+g.ax_heatmap.set_ylabel("Position")
+
+g.fig.suptitle(
+    "Amino Acid Permutations Heatmap for Equal scoring\n"
+    "Top: To (4 → 6 → 7)   |   Bottom: From (7 → 6 → 4)",
+    fontsize=14,
+    y=1.05
+)
+
+# ============================================================
+#
