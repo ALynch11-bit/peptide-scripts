@@ -1,0 +1,68 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+
+# --------------------------------------------------
+# Load Excel data
+# --------------------------------------------------
+file_path = "Batch7results.xlsx"
+sheet_name = "KRPermutationdifferencespos2->9"
+
+df = pd.read_excel(file_path, sheet_name=sheet_name)
+
+# --------------------------------------------------
+# Filter for K and R, positions 2 and 9
+# --------------------------------------------------
+df_filtered = df[
+    df["AA_Movedfinal"].isin(["K", "R"]) &
+    df["To_Positionfinal"].isin([2, 9])
+]
+
+# --------------------------------------------------
+# Create 2x2 matrix using PEP scores
+# --------------------------------------------------
+heatmap_data = (
+    df_filtered
+    .pivot_table(
+        index="AA_Movedfinal",
+        columns="To_Positionfinal",
+        values="Equal_final",
+        aggfunc="mean"
+    )
+    .reindex(index=["K", "R"], columns=[2, 9])
+)
+
+# --------------------------------------------------
+# Plot heatmap
+# --------------------------------------------------
+plt.figure(figsize=(5, 5))
+
+ax = sns.heatmap(
+    heatmap_data,
+    cmap="bwr",
+    vmin=-1,
+    vmax=1,
+    center=0,
+    annot=True,
+    fmt=".2f",
+    linewidths=1,
+    linecolor="black",
+    cbar_kws={"label": "Intensity Score (Equal_final)"}
+)
+
+plt.xlabel("Moved_to Position")
+plt.ylabel("Amino Acid Moved")
+plt.title("KR Movement Equal Score Heatmap (Positions 2 and 9)")
+
+plt.tight_layout()
+
+# --------------------------------------------------
+# Save image
+# --------------------------------------------------
+output_filename = "KR_Pos2_vs_Pos9_Intensity_Heatmap.png"
+plt.savefig(output_filename, dpi=300, bbox_inches="tight")
+
+plt.show()
+
+print(f"Image saved as: {output_filename}")
